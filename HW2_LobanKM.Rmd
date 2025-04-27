@@ -1,0 +1,242 @@
+---
+title: 'Biostat :: Home Work №2'
+author: "Loban Konstantin"
+date: "2025-04-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Подготовительный этап
+
+Загрузка датасета и необходимых библиотек
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(forestplot)
+library(broom)
+library(pROC)
+
+temp_file <- tempfile(fileext = ".csv")
+download.file("https://raw.githubusercontent.com/Aeverandi/biostat/refs/heads/main/wisconsin_breast_cancer.csv", temp_file, mode="wb")
+
+
+#df <- read_csv("C:/Users/Beelink_Loban/YandexDisk/- По работе/Магистратура/R/wisconsin_breast_cancer.csv",   col_types = cols(...33 = col_skip()))
+
+df <- read_csv(temp_file,   col_types = cols(...33 = col_skip()))
+```
+
+## Задание №1
+
+Создайте регрессионную модель (или несколько моделей), которая описывала бы связь:
+
+-   среднего радиуса опухоли (*radius_mean*) и средней площади (*area_mean*)
+
+-   среднего периметра (*perimeter_mean*)
+
+-   средней симметричности (*symmetry_mean*)
+
+Постройте график (или графики, если моделей несколько), на котором отразите регрессионную прямую, и прокомментируйте свои находки.
+
+```{r}
+model1 <- lm(radius_mean ~ area_mean, data = df)
+summary(model1)
+```
+
+```{r}
+model2 <- lm(radius_mean ~ perimeter_mean, data = df)
+summary(model2)
+```
+
+```{r}
+model3 <- lm(radius_mean ~ symmetry_mean, data = df)
+summary(model3)
+```
+
+```{r}
+ggplot(df, aes(x = radius_mean)) +
+  geom_point(aes(y = area_mean, color = "Area"), alpha = 0.5) +
+  geom_point(aes(y = perimeter_mean, color = "Perimeter"), alpha = 0.5) +
+  geom_point(aes(y = symmetry_mean, color = "Symmetry"), alpha = 0.5) + 
+  scale_color_manual(name = "Модели", values = c("Area" = "blue", "Perimeter" = "green", "Symmetry" = "purple")) +
+  labs(x = "Средний радиус",
+       y = "Значения") +
+  theme_minimal()
+```
+
+В общем-то, все логично, если предположить что форма опухоли стремится к идельной сфере (точнее, кругу в 2Д измерении). Тогда, если я правильно помню школьную геометрию: $Area = πr^2; Perimeter = 2πr$
+
+А что такое симметричность и как она считается не могу предположить, но она связи с радиусум опухоли не имеет, по крайней мере линейной...
+
+## Задание №2
+
+Пусть колонка с диагнозом принимает следующие значения: злокачественная опухоль (M) — 1, а доброкачественная (B) — 0. Постройте модель (или несколько моделей), которая прогнозировала бы вероятность возникновения злокачественной опухоли:
+
+-   от среднего радиуса;
+
+-   средней площади;
+
+-   средней текстуры.
+
+Постройте графики. Создайте модель, которая бы прогнозировала вероятность возникновения злокачественной опухоли от всех трех перечисленных факторов.
+
+```{r}
+df$diagnosis_bin <- ifelse(df$diagnosis == "M", 1, 0)
+
+model1 <- glm(diagnosis_bin ~ radius_mean, data = df, family = binomial)
+summary(model1)
+```
+
+```{r}
+model2 <- glm(diagnosis_bin ~ area_mean, data = df, family = binomial)
+summary(model2)
+```
+
+```{r}
+model3 <- glm(diagnosis_bin ~ texture_mean, data = df, family = binomial)
+summary(model3)
+```
+
+По отдельности все эти факторы статистически значимо влияют на вероятность опухоли.
+
+```{r}
+ggplot(df, aes(x = radius_mean, y = diagnosis_bin)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE, color = "blue") +
+  theme_minimal()
+
+ggplot(df, aes(x = area_mean, y = diagnosis_bin)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE, color = "darkgreen") +
+  theme_minimal()
+
+ggplot(df, aes(x = texture_mean, y = diagnosis_bin)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE, color = "red") +
+  theme_minimal()
+```
+
+Интересный эффект получаем при создании мультифакторной логмодели
+
+```{r}
+model_multi <- glm(diagnosis_bin ~ radius_mean + area_mean + texture_mean, data = df, family = binomial)
+summary(model_multi)
+```
+
+```{r}
+model_data <- tidy(model_multi, conf.int = TRUE, exponentiate = TRUE) %>% 
+  filter(term != "(Intercept)")  # Удаляем свободный член для наглядности
+
+# Подготовка данных для forestplot
+labels <- c("Средний радиус (radius_mean)", 
+           "Средняя площадь (area_mean)", 
+           "Средняя текстура (texture_mean)")
+
+forestplot(
+  labeltext = c('радиус','площадь','текстура'),
+  mean = model_data$estimate,
+  lower = model_data$conf.low,
+  upper = model_data$conf.high,
+  zero = 1,  
+  xlog = TRUE,  
+  boxsize = 0.1,
+  col = fpColors(box = "royalblue", line = "darkblue"),
+  title = "Forrest-plot для факторов прогнозирования злокач опухоли",
+  xlab = "Odds Ratio",
+  graph.pos = 2  # Позиция графика (3-й столбец)
+)
+```
+
+Могу предположить, что потеря значимости радиуса и площади связана в их линейной зависимости, что привело к мультиколлинеарности. Следует оставить только один из этих признаков.
+
+```{r}
+model_multi1 <- glm(diagnosis_bin ~ radius_mean + texture_mean, data = df, family = binomial)
+summary(model_multi1)
+```
+
+```{r}
+model_multi2 <- glm(diagnosis_bin ~ area_mean + texture_mean, data = df, family = binomial)
+summary(model_multi2)
+```
+
+В обоих случаях стало лучше, но как же теперь выбрать модель, обладающую наилучшей прогностической способностью? Лично мне для этих целей больше всего нравится метрика AUC_ROC
+
+```{r}
+auc_model_multi <- auc(roc(df$diagnosis_bin ~ predict(model_multi, type = "response")))
+cat("все три фактора:\t", auc_model_multi, "\n")
+
+auc_model_multi1 <- auc(roc(df$diagnosis_bin ~ predict(model_multi1, type = "response")))
+cat("текстура + радиус:\t", auc_model_multi1, "\n")
+
+auc_model_multi2 <- auc(roc(df$diagnosis_bin ~ predict(model_multi2, type = "response")))
+cat("текстура + площадь:\t", auc_model_multi2, "\n")
+
+# Чисто из интереса сравним с однофакторными моделями
+auc_model1 <- auc(roc(df$diagnosis_bin ~ predict(model1, type = "response")))
+cat("радиус:\t\t", auc_model1, "\n")
+
+auc_model2 <- auc(roc(df$diagnosis_bin ~ predict(model2, type = "response")))
+cat("площадь:\t", auc_model2, "\n")
+
+auc_model3 <- auc(roc(df$diagnosis_bin ~ predict(model3, type = "response")))
+cat("текстура:\t", auc_model3, "\n")
+```
+
+Среди многофакторных моделей незначимо лучше показатели имеет модель, включающая текстуру и площадь. Значимо хуже ведут себя однофакторные модели. Модель можно улучшать, включая в нее новые параметры, но обязательно дополнять обучение модели (кросс-)валидацией, чтобы не допустить ее переобучения
+
+## Задание №3
+
+Рассчитайте выборку для гипотезы ***equality*** для следующего исследования.
+
+Мы хотим сравнить новую терапию инфекции, присоединяющейся в больничных условиях у пациентов с ожогами, с золотым стандартом, основываясь на данных, анализируемых с помощью регрессии Кокса.
+
+Пусть отношение рисков «золотой стандарт / новая терапия», hazard ratio, HR = 2. Мы предполагаем, что 80% пациентов (d = 0,8) могут столкнуться с этим заболеванием. Соотношения групп терапии равны (p1 = p2 = 0,5).
+
+Воспользуйтесь следующими формулами:
+
+![](images/clipboard-3174572074.png)
+
+```{r}
+# Параметры исследования
+HR <- 2         
+alpha <- 0.05  
+d <- 0.8 
+p1 <- 0.5  
+p2 <- 0.5       
+
+Z <- qnorm(1 - alpha/2)
+
+n <- ((Z/2 + Z)^2) / ((log(HR))^2 * p1 * p2 * d)
+#__________________^_вот тут деление, а не умножение!!!
+
+n1 <- ceiling(n)
+total_n <- 2 * n1  
+
+cat("Необходимый размер одной группы:", n1, "\n")
+cat("Общий необходимый размер выборки:", total_n, "\n")
+
+```
+
+Перепроверяем через встроенные функции. Учел несовпадение. Подправил формулу выше (умножение сменил на деление) - результат стал ближе к тому, что получился через *powerSurvEpi*, но в последнем вообще какая-то сильно другая формула в исходнике используется.
+
+```{r}
+library(powerSurvEpi)
+
+n <- ssizeCT.default(
+  power = power,
+  k = 1,    
+  pC = d,   
+  pE = d/HR,
+  RR = HR, 
+  alpha = alpha
+)
+
+cat("Необходимый размер одной группы:", ceiling(n[['nE']]), "\n")
+cat("Общий размер выборки:", ceiling(n[['nE']] + n[['nC']]), "\n")
+
+```
