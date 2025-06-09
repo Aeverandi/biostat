@@ -1,0 +1,27 @@
+---
+title: 'Biostat :: Exam'
+author: "Loban Konstantin"
+date: "2025-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Подготовительный этап
+
+Загрузка датасета и необходимых библиотек
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(forestplot)
+library(broom)
+library(pROC)
+
+
+df <- read_csv("C:/Users/Beelink_Loban/YandexDisk/- По работе/Магистратура/R/kidney_disease_dataset.csv",   col_types = cols(...33 = col_skip()))
+```
